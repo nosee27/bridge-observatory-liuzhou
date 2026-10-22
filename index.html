@@ -14,7 +14,9 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%230c2935'/%3E%3Cpath d='M8 43h48M15 43c3-17 10-27 17-27s14 10 17 27M21 36v7M32 24v19M43 36v7' fill='none' stroke='%23ff9c63' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M8 50c7-3 11-3 18 0s11 3 17 0 9-3 14 0' fill='none' stroke='%2363b7b2' stroke-width='2'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="app3d/shell.css" />
     <script src="app.js" defer></script>
+    <script type="module" src="app3d/main.mjs"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">跳到主要内容</a>
@@ -48,6 +50,7 @@
       </div>
     </dialog>
 
+    <div class="legacy-root" id="legacyRoot">
     <header class="site-header" id="siteHeader">
       <a class="brand" href="#top" aria-label="桥见柳州，回到首页">
         <span class="brand-mark" aria-hidden="true">
@@ -612,7 +615,100 @@
         <a href="#top">回到顶部 ↑</a>
       </div>
     </footer>
+    </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <!-- ===== 3D 外壳（M0）===== -->
+    <div class="app3d" id="app3d" hidden>
+      <canvas
+        class="app3d-canvas"
+        id="sceneCanvas"
+        role="img"
+        tabindex="0"
+        aria-label="柳江 3D 城市场景。方向键环视，加减号缩放，Home 复位，回车打开所选构件。"
+      ></canvas>
+      <div class="app3d-vignette" aria-hidden="true"></div>
+      <div class="app3d-labels" id="sceneLabels" aria-hidden="true"></div>
+
+      <header class="app3d-top">
+        <a class="app3d-brand" href="#atlas" aria-label="桥见柳州 · 3D 城市总览">
+          <span class="app3d-brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48">
+              <path d="M4 34h40M9 34c2-12 7-19 15-19s13 7 15 19M15 29v5M24 21v13M33 29v5" />
+              <path d="M4 39c5-2 8-2 13 0s8 2 13 0 8-2 14 0" />
+            </svg>
+          </span>
+          <span class="app3d-brand-text">
+            <strong>桥见柳州</strong>
+            <small>3D CITY ATLAS</small>
+          </span>
+        </a>
+
+        <nav class="app3d-nav" aria-label="场景导航">
+          <a class="app3d-nav-item" data-nav="atlas" href="#atlas">城市总览</a>
+          <a class="app3d-nav-item" data-nav="browse" href="#browse">列表</a>
+          <button
+            class="app3d-ghost"
+            id="btnExperiment"
+            type="button"
+            aria-pressed="false"
+            title="打开左侧实验词条：力流、荷载、受力配色与拆解"
+          >实验</button>
+          <button class="app3d-ghost" id="btnResetView" type="button">重置视角</button>
+          <button class="app3d-ghost" id="btnBrowse" type="button">列表视图</button>
+        </nav>
+      </header>
+
+      <div class="app3d-hud">
+        <p class="app3d-kicker" id="sceneKicker">M0 / SHELL</p>
+        <h1 class="app3d-title" id="sceneTitle">柳江 · LIUJIANG</h1>
+        <p class="app3d-sub" id="sceneSub">3D 城市总览建设中</p>
+        <ul class="app3d-bridges" id="sceneBridgeList" aria-label="五座代表性桥梁"></ul>
+      </div>
+
+      <!-- 桥梁资料卡（选中某座桥时由 app3d/panel.mjs 填充） -->
+      <aside class="a3d-panel" id="scenePanel" aria-label="桥梁资料卡" hidden></aside>
+
+      <!-- 结构实验室侧栏（#lab 视图，由 app3d/lab.mjs 填充） -->
+      <aside class="a3d-lab" id="sceneLab" aria-label="结构实验室" hidden></aside>
+
+      <p class="app3d-credit" id="sceneCredit">
+        地图数据 <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer noopener">© OpenStreetMap contributors</a>（ODbL 1.0） · 地形高程 SRTM / GMTED2010 <a href="https://www.usgs.gov/" target="_blank" rel="noreferrer noopener">courtesy of the U.S. Geological Survey</a>，瓦片 <a href="https://github.com/tilezen/joerd" target="_blank" rel="noreferrer noopener">Mapzen Joerd</a>（MIT）
+      </p>
+      <p class="app3d-status" id="sceneStatus" role="status" aria-live="polite"></p>
+    </div>
+
+    <div class="boot-notice" id="bootNotice" hidden>
+      <div class="boot-notice-card">
+        <h2 id="bootNoticeTitle">提示</h2>
+        <p id="bootNoticeBody"></p>
+        <div class="boot-notice-actions">
+          <button class="app3d-btn" id="bootNoticeBrowse" type="button">进入列表视图</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // 兜底：file:// 下 ES module 会被浏览器直接拒绝，main.mjs 根本不会执行，
+      // 因此这里用普通脚本给出提示，并把页面交回现有 2D 版本。
+      window.setTimeout(function () {
+        if (window.location.protocol !== "file:") return;
+        var notice = document.getElementById("bootNotice");
+        if (!notice) return;
+        var guide = document.getElementById("guideDialog");
+        if (guide && guide.open) {
+          try { guide.close(); } catch (error) { /* 忽略 */ }
+        }
+        var title = document.getElementById("bootNoticeTitle");
+        var body = document.getElementById("bootNoticeBody");
+        if (title) title.textContent = "需要通过本地服务器打开";
+        if (body) {
+          body.innerHTML =
+            "3D 场景依赖 ES module 与 WebGL，必须经 <code>http://</code> 访问。请在项目目录运行 <code>node server.js</code>（或双击 <code>start.bat</code>），再打开 <code>http://127.0.0.1:4173</code>。当前页面已回退到列表视图。";
+        }
+        notice.hidden = false;
+      }, 400);
+    </script>
   </body>
 </html>

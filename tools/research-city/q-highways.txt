@@ -1,0 +1,3 @@
+[out:csv(::id,highway,name;false;"	")][timeout:90];
+way["highway"](24.30,109.36,24.38,109.50);
+out;

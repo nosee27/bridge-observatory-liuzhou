@@ -1,5 +1,7 @@
 node_modules/
 .edge-*/
+.tmp*
+tools/.cache/
 presentation/render/
 presentation/slide-*.png
 preview-*.png

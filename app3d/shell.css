@@ -1,0 +1,1668 @@
+/* 3D 外壳样式（M0）。与 styles.css 分离，避免影响现有 2D 页面。 */
+
+:root {
+  --a3d-bg: #071a22;
+  --a3d-panel: #0b232c;
+  --a3d-ink: #e8f3f2;
+  --a3d-muted: #8fb3b6;
+  --a3d-accent: #ff9c63;
+  --a3d-teal: #63b7b2;
+  --a3d-line: rgba(159, 216, 224, 0.18);
+  --a3d-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+/* 视图切换 */
+
+.legacy-root[hidden] {
+  display: none !important;
+}
+
+body.app3d-active {
+  overflow: hidden;
+}
+
+/* 3D 容器 */
+
+.app3d {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+  /* 三维初始化完成前露出的底色，跟白天主题的天空接近，避免先黑后亮的闪烁 */
+  background:
+    radial-gradient(120% 90% at 50% 8%, #eaf4f8 0%, #cfe4ee 58%, #a9c8d8 100%);
+}
+
+.app3d[hidden] {
+  display: none !important;
+}
+
+.app3d-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.app3d-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* 白天场景下压得太重会像蒙了灰，只留一点压角 */
+  background: radial-gradient(115% 95% at 50% 45%, transparent 58%, rgba(28, 52, 62, 0.26) 100%);
+}
+
+/* 顶部栏 */
+
+.app3d-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 18px clamp(16px, 3vw, 30px);
+}
+
+.app3d-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--a3d-ink);
+  text-decoration: none;
+}
+
+.app3d-brand-mark svg {
+  width: 34px;
+  height: 34px;
+  fill: none;
+  stroke: var(--a3d-accent);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.app3d-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.app3d-brand-text strong {
+  font-size: 15px;
+  letter-spacing: 0.04em;
+}
+
+.app3d-brand-text small {
+  font-size: 9.5px;
+  letter-spacing: 0.26em;
+  color: var(--a3d-teal);
+}
+
+.app3d-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.app3d-nav-item {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: var(--a3d-muted);
+  text-decoration: none;
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.app3d-nav-item:hover,
+.app3d-nav-item:focus-visible {
+  color: var(--a3d-ink);
+  border-color: var(--a3d-line);
+}
+
+.app3d-nav-item.is-active {
+  color: #08181f;
+  background: var(--a3d-accent);
+  font-weight: 600;
+}
+
+.app3d-ghost,
+.app3d-btn {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--a3d-line);
+  background: rgba(7, 26, 34, 0.6);
+  color: var(--a3d-ink);
+  font: inherit;
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.app3d-ghost:hover,
+.app3d-ghost:focus-visible {
+  border-color: var(--a3d-accent);
+  color: var(--a3d-accent);
+}
+
+.app3d-btn {
+  border-color: transparent;
+  background: var(--a3d-accent);
+  color: #08181f;
+  font-weight: 600;
+}
+
+.app3d-btn:hover,
+.app3d-btn:focus-visible {
+  background: #ffb281;
+}
+
+/* 占位按钮：昼夜切换尚未实现，只把位置和样式先占住。
+   虚线边框 + 低透明度 + 「开发中」角标，明确表示现在不可用，避免点了没反应像坏掉。 */
+.app3d-ghost--pending {
+  border-style: dashed;
+  color: var(--a3d-muted);
+  background: rgba(7, 26, 34, 0.42);
+  cursor: default;
+}
+
+.app3d-ghost--pending:hover,
+.app3d-ghost--pending:focus-visible {
+  border-color: var(--a3d-line);
+  color: var(--a3d-muted);
+}
+
+.app3d-pending {
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  background: rgba(159, 216, 224, 0.18);
+  color: var(--a3d-muted);
+}
+
+/* 左下 HUD */
+
+.app3d-hud {
+  position: absolute;
+  left: clamp(16px, 3vw, 30px);
+  bottom: clamp(16px, 3vw, 30px);
+  z-index: 3;
+  max-width: min(460px, 82vw);
+}
+
+.app3d-kicker {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--a3d-teal);
+}
+
+.app3d-title {
+  margin: 0.42em 0 0.28em;
+  font-size: clamp(26px, 3.4vw, 44px);
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  color: var(--a3d-ink);
+  text-shadow: 0 6px 26px rgba(0, 0, 0, 0.55);
+}
+
+.app3d-sub {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--a3d-muted);
+}
+
+.app3d-bridges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app3d-bridge-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--a3d-line);
+  background: rgba(7, 26, 34, 0.55);
+  color: var(--a3d-ink);
+  text-decoration: none;
+  font-size: 12.5px;
+  backdrop-filter: blur(6px);
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.app3d-bridge-link i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot, var(--a3d-teal));
+}
+
+.app3d-bridge-link:hover,
+.app3d-bridge-link:focus-visible {
+  border-color: var(--a3d-accent);
+}
+
+.app3d-bridge-link.is-active {
+  background: var(--a3d-accent);
+  border-color: transparent;
+  color: #08181f;
+  font-weight: 600;
+}
+
+.app3d-bridge-link.is-active i {
+  background: #08181f;
+}
+
+/* 右下状态行（M0 调试与自检用） */
+
+.app3d-status {
+  position: absolute;
+  right: clamp(16px, 3vw, 30px);
+  bottom: clamp(16px, 3vw, 30px);
+  z-index: 3;
+  margin: 0;
+  max-width: 46vw;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.6;
+  text-align: right;
+  color: rgba(143, 179, 182, 0.72);
+  text-shadow: 0 1px 3px rgba(4, 20, 27, 0.75), 0 0 12px rgba(4, 20, 27, 0.45);
+}
+
+/* 数据署名（ODbL 要求可见） */
+
+.app3d-credit {
+  position: absolute;
+  right: clamp(16px, 3vw, 30px);
+  bottom: calc(clamp(16px, 3vw, 30px) + 34px);
+  z-index: 3;
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: rgba(143, 179, 182, 0.55);
+  /* 白天底色偏亮，小字要靠投影压住才看得清 */
+  text-shadow: 0 1px 3px rgba(4, 20, 27, 0.75), 0 0 12px rgba(4, 20, 27, 0.45);
+}
+
+.app3d-credit a {
+  color: rgba(143, 179, 182, 0.78);
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(143, 179, 182, 0.4);
+}
+
+.app3d-credit a:hover {
+  color: var(--a3d-accent);
+  border-bottom-color: var(--a3d-accent);
+}
+
+/* 列表视图下的返回按钮 */
+
+.return-3d {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 156, 99, 0.45);
+  background: rgba(11, 35, 44, 0.94);
+  color: var(--a3d-accent);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--a3d-shadow);
+  backdrop-filter: blur(8px);
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.return-3d:hover,
+.return-3d:focus-visible {
+  background: rgba(255, 156, 99, 0.16);
+  transform: translateY(-1px);
+}
+
+/* 启动提示（file:// 或 3D 加载失败） */
+
+.boot-notice {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 17, 24, 0.86);
+  backdrop-filter: blur(10px);
+}
+
+.boot-notice[hidden] {
+  display: none !important;
+}
+
+.boot-notice-card {
+  width: min(460px, 100%);
+  padding: 26px clamp(20px, 3vw, 30px);
+  border-radius: 18px;
+  border: 1px solid var(--a3d-line);
+  background: var(--a3d-panel);
+  color: var(--a3d-ink);
+  box-shadow: var(--a3d-shadow);
+}
+
+.boot-notice-card h2 {
+  margin: 0 0 0.6em;
+  font-size: 19px;
+  letter-spacing: 0.02em;
+}
+
+.boot-notice-card p {
+  margin: 0 0 1.1em;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--a3d-muted);
+}
+
+.boot-notice-card code {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(159, 216, 224, 0.12);
+  color: var(--a3d-accent);
+  font-size: 12.5px;
+}
+
+.boot-notice-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* 窄屏收敛 */
+
+@media (max-width: 720px) {
+  .app3d-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .app3d-nav {
+    justify-content: flex-start;
+  }
+
+  .app3d-status {
+    display: none;
+  }
+
+  .app3d-hud {
+    max-width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .return-3d,
+  .app3d-nav-item,
+  .app3d-bridge-link {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * M1：场景标签与画布交互
+ * ------------------------------------------------------------------ */
+
+.app3d-canvas {
+  touch-action: none;
+}
+
+.app3d-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.a3d-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 7px;
+  padding: 5px 11px 6px 9px;
+  border-radius: 9px;
+  border: 1px solid var(--a3d-line);
+  background: rgba(6, 22, 29, 0.74);
+  backdrop-filter: blur(6px);
+  color: var(--a3d-ink);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.a3d-label:hover,
+.a3d-label:focus-visible {
+  border-color: var(--label-accent, var(--a3d-accent));
+  background: rgba(6, 22, 29, 0.9);
+  outline: none;
+}
+
+.a3d-label.is-active {
+  border-color: var(--label-accent, var(--a3d-accent));
+  box-shadow: inset 0 0 0 1px var(--label-accent, var(--a3d-accent));
+  background: rgba(6, 22, 29, 0.94);
+}
+
+.a3d-label-dot {
+  grid-row: 1 / span 2;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--label-accent, var(--a3d-teal));
+  box-shadow: 0 0 8px var(--label-accent, var(--a3d-teal));
+}
+
+.a3d-label-text {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+}
+
+.a3d-label-sub {
+  font-size: 9.5px;
+  line-height: 1.3;
+  color: var(--a3d-muted);
+  letter-spacing: 0.02em;
+}
+
+.a3d-label-building {
+  transform-origin: bottom center;
+}
+
+.a3d-label-building .a3d-label-text {
+  color: #d8ecf5;
+}
+
+@media (max-width: 720px) {
+  .a3d-label {
+    padding: 4px 8px 5px 7px;
+    column-gap: 5px;
+  }
+
+  .a3d-label-sub {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 桥梁资料卡（3D 单桥视图）
+ * 与 app3d/panel.mjs 成对维护：这里是它唯一的样式来源。
+ * ------------------------------------------------------------------ */
+
+.a3d-panel {
+  position: absolute;
+  z-index: 6;
+  top: 96px;
+  right: 28px;
+  width: min(380px, calc(100vw - 56px));
+  max-height: calc(100vh - 180px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(159, 216, 224, 0.22);
+  background: linear-gradient(180deg, rgba(9, 32, 41, 0.94), rgba(7, 24, 31, 0.96));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  color: #e8f2f3;
+  backdrop-filter: blur(14px);
+  overflow: hidden;
+  animation: a3d-panel-in 220ms ease-out;
+}
+
+.a3d-panel[hidden] {
+  display: none;
+}
+
+@keyframes a3d-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .a3d-panel {
+    animation: none;
+  }
+}
+
+.a3d-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.a3d-panel-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.a3d-panel-order {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: rgba(159, 216, 224, 0.72);
+}
+
+.a3d-panel-title h2 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.a3d-panel-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  border: 1px solid rgba(159, 216, 224, 0.26);
+  background: rgba(159, 216, 224, 0.08);
+  color: #cfe6e9;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.a3d-panel-close:hover,
+.a3d-panel-close:focus-visible {
+  background: rgba(159, 216, 224, 0.2);
+  border-color: rgba(159, 216, 224, 0.5);
+}
+
+.a3d-panel-alias {
+  margin: -6px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(200, 226, 229, 0.62);
+}
+
+.a3d-panel-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(159, 216, 224, 0.06);
+  font-size: 12px;
+}
+
+.a3d-panel-meta dt {
+  color: rgba(180, 214, 219, 0.66);
+}
+
+.a3d-panel-meta dd {
+  margin: 0;
+  color: #e8f2f3;
+}
+
+.a3d-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+}
+
+.a3d-panel-tagline {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #ffd9a0;
+}
+
+.a3d-panel-desc {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: rgba(224, 238, 239, 0.86);
+}
+
+.a3d-panel-parts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.a3d-part {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 11px;
+  border: 1px solid rgba(159, 216, 224, 0.12);
+  background: rgba(10, 34, 43, 0.5);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: default;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.a3d-part.is-modeled {
+  cursor: pointer;
+  border-color: rgba(159, 216, 224, 0.24);
+}
+
+.a3d-part.is-modeled:hover,
+.a3d-part.is-modeled:focus-visible {
+  background: rgba(159, 216, 224, 0.12);
+  border-color: rgba(159, 216, 224, 0.48);
+}
+
+.a3d-part.is-active {
+  background: rgba(255, 207, 106, 0.14);
+  border-color: rgba(255, 207, 106, 0.62);
+}
+
+.a3d-part i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: rgba(159, 216, 224, 0.34);
+}
+
+.a3d-part.is-modeled i {
+  background: #9fd8e0;
+}
+
+.a3d-part.is-active i {
+  background: #ffcf6a;
+  box-shadow: 0 0 0 3px rgba(255, 207, 106, 0.2);
+}
+
+.a3d-part span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.a3d-part strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f1f8f8;
+}
+
+.a3d-part small {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: rgba(206, 226, 229, 0.7);
+}
+
+.a3d-panel-note {
+  margin: 0;
+  padding: 9px 11px;
+  border-radius: 11px;
+  background: rgba(255, 207, 106, 0.08);
+  border-left: 2px solid rgba(255, 207, 106, 0.55);
+  font-size: 12px;
+  line-height: 1.7;
+  color: rgba(240, 232, 214, 0.9);
+}
+
+.a3d-panel-note strong {
+  color: #ffd9a0;
+  font-weight: 600;
+}
+
+.a3d-panel-current {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 207, 106, 0.4);
+  background: rgba(255, 207, 106, 0.06);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.a3d-panel-current strong {
+  color: #ffcf6a;
+  font-size: 12.5px;
+}
+
+.a3d-panel-foot {
+  display: flex;
+  gap: 8px;
+}
+
+.a3d-panel-cta {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(159, 216, 224, 0.4);
+  background: linear-gradient(180deg, rgba(159, 216, 224, 0.22), rgba(159, 216, 224, 0.1));
+  color: #eaf6f7;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.a3d-panel-cta:hover,
+.a3d-panel-cta:focus-visible {
+  background: linear-gradient(180deg, rgba(159, 216, 224, 0.34), rgba(159, 216, 224, 0.16));
+  border-color: rgba(159, 216, 224, 0.68);
+}
+
+@media (max-width: 720px) {
+  .a3d-panel {
+    top: auto;
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    width: auto;
+    max-height: 58vh;
+  }
+}
+
+/* 显示模式：结构 / 受力 */
+.a3d-modes {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  border: 1px solid rgba(159, 216, 224, 0.22);
+  background: rgba(9, 32, 41, 0.5);
+}
+
+.a3d-mode {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(214, 234, 236, 0.72);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.a3d-mode:hover,
+.a3d-mode:focus-visible {
+  background: rgba(159, 216, 224, 0.12);
+  color: #eaf6f7;
+}
+
+.a3d-mode.is-active {
+  background: rgba(159, 216, 224, 0.24);
+  color: #ffffff;
+}
+
+/* 拆解按钮的按下态 */
+.app3d-ghost[aria-pressed="true"] {
+  background: rgba(159, 216, 224, 0.24);
+  border-color: rgba(159, 216, 224, 0.6);
+  color: #ffffff;
+}
+
+@media (max-width: 720px) {
+  .a3d-modes {
+    order: -1;
+  }
+  .a3d-mode {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+}
+
+/* 画布可聚焦（键盘镜头）：必须给出可见的焦点环，否则键盘用户不知道焦点在哪 */
+.app3d-canvas:focus-visible {
+  outline: 2px solid rgba(159, 216, 224, 0.8);
+  outline-offset: -5px;
+  border-radius: 2px;
+}
+
+/* ------------------------------------------------------------------ *
+ * 结构实验室侧栏（#lab 视图）
+ * 与 app3d/lab.mjs 成对维护。
+ * ------------------------------------------------------------------ */
+
+/* 实验词条固定左栏：右侧留给资料词条，中间留给模型 */
+.a3d-lab {
+  position: absolute;
+  z-index: 6;
+  top: 96px;
+  left: 28px;
+  width: min(340px, calc(100vw - 56px));
+  /* 高度让开左下角的 HUD，不跟它抢位置 */
+  max-height: calc(100vh - 320px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 18px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(159, 216, 224, 0.22);
+  background: linear-gradient(180deg, rgba(9, 32, 41, 0.94), rgba(7, 24, 31, 0.96));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  color: #e8f2f3;
+  backdrop-filter: blur(14px);
+  overflow: hidden;
+  animation: a3d-panel-in 220ms ease-out;
+}
+
+.a3d-lab[hidden] {
+  display: none;
+}
+
+/* 选桥 */
+.a3d-lab-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.a3d-lab-chip {
+  padding: 5px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(159, 216, 224, 0.2);
+  background: rgba(10, 34, 43, 0.5);
+  color: rgba(214, 234, 236, 0.78);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.a3d-lab-chip:hover,
+.a3d-lab-chip:focus-visible {
+  background: rgba(159, 216, 224, 0.14);
+  color: #eaf6f7;
+}
+
+.a3d-lab-chip.is-active {
+  background: rgba(159, 216, 224, 0.26);
+  border-color: rgba(159, 216, 224, 0.6);
+  color: #ffffff;
+}
+
+/* 小节 */
+.a3d-lab-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(159, 216, 224, 0.12);
+}
+
+.a3d-lab-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.a3d-lab-head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(180, 214, 219, 0.72);
+}
+
+.a3d-lab-play {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(159, 216, 224, 0.3);
+  background: rgba(159, 216, 224, 0.12);
+  color: #eaf6f7;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.a3d-lab-play:hover,
+.a3d-lab-play:focus-visible {
+  background: rgba(159, 216, 224, 0.24);
+}
+
+.a3d-lab-play[aria-pressed="true"] {
+  background: rgba(255, 207, 106, 0.24);
+  border-color: rgba(255, 207, 106, 0.6);
+  color: #fff6e4;
+}
+
+/* 力流步骤 */
+.a3d-lab-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  counter-reset: step;
+}
+
+.a3d-lab-step {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(159, 216, 224, 0.12);
+  background: rgba(10, 34, 43, 0.45);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.a3d-lab-step:hover,
+.a3d-lab-step:focus-visible {
+  background: rgba(159, 216, 224, 0.1);
+  border-color: rgba(159, 216, 224, 0.4);
+}
+
+.a3d-lab-step.is-active {
+  background: rgba(255, 95, 134, 0.16);
+  border-color: rgba(255, 95, 134, 0.7);
+}
+
+.a3d-lab-index {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10.5px;
+  background: rgba(159, 216, 224, 0.18);
+  color: #d9eef0;
+}
+
+.a3d-lab-step.is-active .a3d-lab-index {
+  background: rgba(255, 95, 134, 0.5);
+  color: #ffffff;
+}
+
+.a3d-lab-steptext {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.a3d-lab-steptext strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f1f8f8;
+}
+
+.a3d-lab-steptext small {
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(206, 226, 229, 0.66);
+}
+
+.a3d-lab-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: rgba(198, 220, 223, 0.6);
+}
+
+/* 荷载 */
+.a3d-lab-value {
+  font-size: 11.5px;
+  color: #ffcf6a;
+}
+
+.a3d-lab-range {
+  width: 100%;
+  accent-color: #ffcf6a;
+}
+
+/* 工具与底部 */
+.a3d-lab-tools {
+  display: flex;
+  gap: 8px;
+}
+
+.a3d-lab-tool {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(159, 216, 224, 0.24);
+  background: rgba(10, 34, 43, 0.5);
+  color: #e8f3f4;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.a3d-lab-tool:hover,
+.a3d-lab-tool:focus-visible {
+  background: rgba(159, 216, 224, 0.16);
+}
+
+.a3d-lab-tool.is-active {
+  background: rgba(159, 216, 224, 0.28);
+  border-color: rgba(159, 216, 224, 0.66);
+  color: #ffffff;
+}
+
+@media (max-width: 720px) {
+  .a3d-lab {
+    top: auto;
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    width: auto;
+    max-height: 46vh;
+  }
+}
+
+/* 受力配色图例：颜色与 atlas 的 highlightMaterials 一一对应 */
+.a3d-lab-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 11px;
+  color: rgba(206, 226, 229, 0.72);
+}
+
+.a3d-lab-legend[hidden] {
+  display: none;
+}
+
+.a3d-lab-legend li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.a3d-lab-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: #9fd8e0;
+}
+
+.a3d-lab-legend li[data-nature="load"] i {
+  background: #ffd479;
+}
+
+.a3d-lab-legend li[data-nature="bending"] i {
+  background: #c8a4ff;
+}
+
+.a3d-lab-legend li[data-nature="tension"] i {
+  background: #ff7a63;
+}
+
+.a3d-lab-legend li[data-nature="compression"] i {
+  background: #74b6ff;
+}
+
+.a3d-lab-legend li[data-nature="transfer"] i {
+  background: #9fe0c8;
+}
+
+/* 荷载小节隐藏时不要留空隙 */
+.a3d-lab-section[hidden] {
+  display: none;
+}
+
+/* 实验室页签 */
+.a3d-lab-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  border: 1px solid rgba(159, 216, 224, 0.2);
+  background: rgba(9, 32, 41, 0.5);
+}
+
+.a3d-lab-tab {
+  flex: 1;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(214, 234, 236, 0.72);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.a3d-lab-tab:hover,
+.a3d-lab-tab:focus-visible {
+  background: rgba(159, 216, 224, 0.12);
+  color: #eaf6f7;
+}
+
+.a3d-lab-tab.is-active {
+  background: rgba(159, 216, 224, 0.24);
+  color: #ffffff;
+}
+
+/* 页内容：实验室比资料卡长，必须能滚 */
+.a3d-lab-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.a3d-lab-page[hidden] {
+  display: none;
+}
+
+/* 对比页 */
+.a3d-lab-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.a3d-lab-slot {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.a3d-lab-slotlabel {
+  flex: none;
+  width: 14px;
+  padding-top: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 207, 106, 0.9);
+}
+
+.a3d-lab-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.a3d-lab-table th,
+.a3d-lab-table td {
+  padding: 5px 6px;
+  vertical-align: top;
+  text-align: left;
+  border-bottom: 1px solid rgba(159, 216, 224, 0.1);
+}
+
+.a3d-lab-table thead th {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(180, 214, 219, 0.6);
+}
+
+.a3d-lab-table tbody th {
+  width: 62px;
+  font-weight: 500;
+  color: rgba(198, 220, 223, 0.72);
+}
+
+/* 两边不同的行轻轻标一下，一眼看出差异在哪 */
+.a3d-lab-table tr.is-diff td {
+  background: rgba(255, 207, 106, 0.08);
+  color: #ffe7bb;
+}
+
+/* ------------------------------------------------------------------ *
+ * 资料词条：吸顶分区导航 / 来源 / 对比 / 答题
+ * 与 app3d/panel.mjs 成对维护。
+ * ------------------------------------------------------------------ */
+
+.a3d-sections-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 0;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, rgba(9, 32, 41, 0.98), rgba(9, 32, 41, 0.9));
+  border-bottom: 1px solid rgba(159, 216, 224, 0.12);
+}
+
+.a3d-section-link {
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(206, 226, 229, 0.72);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.a3d-section-link:hover,
+.a3d-section-link:focus-visible {
+  background: rgba(159, 216, 224, 0.14);
+  color: #eaf6f7;
+}
+
+.a3d-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 4px;
+  scroll-margin-top: 42px;
+}
+
+.a3d-section h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(180, 214, 219, 0.6);
+}
+
+.a3d-sources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.a3d-sources a {
+  color: #9fd8e0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.a3d-sources a:hover,
+.a3d-sources a:focus-visible {
+  color: #d6f1f4;
+}
+
+.a3d-compare-pick {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* 答题 */
+.a3d-quiz {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.a3d-quiz-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border-radius: 11px;
+  border: 1px solid rgba(159, 216, 224, 0.12);
+  background: rgba(10, 34, 43, 0.45);
+}
+
+.a3d-quiz-question {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #f1f8f8;
+}
+
+.a3d-quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.a3d-quiz-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  border: 1px solid rgba(159, 216, 224, 0.16);
+  background: rgba(9, 32, 41, 0.6);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.a3d-quiz-option:hover:not(:disabled),
+.a3d-quiz-option:focus-visible:not(:disabled) {
+  background: rgba(159, 216, 224, 0.14);
+  border-color: rgba(159, 216, 224, 0.42);
+}
+
+.a3d-quiz-option:disabled {
+  cursor: default;
+}
+
+.a3d-quiz-option.is-correct {
+  background: rgba(120, 220, 170, 0.16);
+  border-color: rgba(120, 220, 170, 0.7);
+}
+
+.a3d-quiz-option.is-wrong {
+  background: rgba(255, 122, 99, 0.16);
+  border-color: rgba(255, 122, 99, 0.7);
+}
+
+.a3d-quiz-letter {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  background: rgba(159, 216, 224, 0.18);
+  color: #d9eef0;
+}
+
+.a3d-quiz-explanation {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: rgba(255, 207, 106, 0.08);
+  border-left: 2px solid rgba(255, 207, 106, 0.55);
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: rgba(240, 232, 214, 0.9);
+}
+
+.a3d-quiz-explanation[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ *
+ * 实验词条收起态 + 移动端抽屉
+ * ------------------------------------------------------------------ */
+
+.a3d-lab.is-collapsed {
+  width: auto;
+  max-width: min(360px, calc(100vw - 56px));
+  padding: 8px 12px;
+  border-radius: 14px;
+}
+
+.a3d-lab-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  color: rgba(214, 234, 236, 0.8);
+}
+
+.a3d-lab-barbridge {
+  font-weight: 600;
+  color: #f1f8f8;
+}
+
+.a3d-lab-barkicker {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(159, 216, 224, 0.18);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: #cfe6e9;
+}
+
+.a3d-lab-barreadout {
+  color: #ffcf6a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.a3d-lab-open {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(159, 216, 224, 0.32);
+  background: rgba(159, 216, 224, 0.14);
+  color: #eaf6f7;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.a3d-lab-open:hover,
+.a3d-lab-open:focus-visible {
+  background: rgba(159, 216, 224, 0.26);
+}
+
+/* 抽屉拖手：只在移动端出现 */
+.a3d-sheet-handle {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .a3d-panel,
+  .a3d-lab {
+    top: auto;
+    bottom: 0;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    border-radius: 18px 18px 0 0;
+    max-height: 48vh;
+    padding-top: 22px;
+    transition: max-height 220ms ease;
+  }
+
+  .a3d-panel[data-sheet="full"],
+  .a3d-lab[data-sheet="full"] {
+    max-height: 92vh;
+  }
+
+  .a3d-sheet-handle {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: grab;
+  }
+
+  .a3d-sheet-handle::after {
+    content: "";
+    display: block;
+    width: 44px;
+    height: 4px;
+    margin: 8px auto 0;
+    border-radius: 2px;
+    background: rgba(159, 216, 224, 0.45);
+  }
+
+  /* 移动端同一时刻只留一个面板：实验展开时收起资料词条 */
+  .a3d-mobile-exp .a3d-panel {
+    display: none;
+  }
+
+  .a3d-lab.is-collapsed {
+    display: none;
+  }
+}
+
+/* 挠度的"放大倍数"徽标：必须显眼、常驻，不能只在拖动时出现 */
+.a3d-lab-badge {
+  margin: 2px 0 0;
+  padding: 5px 9px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 207, 106, 0.55);
+  background: rgba(255, 207, 106, 0.14);
+  color: #ffe1a6;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ *
+ * 交付形态：投屏排版（?present=1）与自助体验（?kiosk=1）
+ * ------------------------------------------------------------------ */
+
+/* 投屏：字号与按钮放大、对比度提高；不改变信息结构 */
+.a3d-present .app3d-hud {
+  max-width: min(720px, 88vw);
+}
+
+.a3d-present .app3d-title {
+  font-size: clamp(30px, 3.2vw, 46px);
+}
+
+.a3d-present .app3d-sub {
+  font-size: clamp(15px, 1.15vw, 19px);
+  line-height: 1.7;
+}
+
+.a3d-present .app3d-kicker,
+.a3d-present .app3d-status {
+  font-size: 13px;
+}
+
+.a3d-present .app3d-bridges li button,
+.a3d-present .app3d-ghost,
+.a3d-present .a3d-mode,
+.a3d-present .a3d-lab-chip,
+.a3d-present .a3d-lab-step,
+.a3d-present .a3d-lab-tool,
+.a3d-present .a3d-panel-cta {
+  font-size: 15px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  min-height: 44px;
+}
+
+.a3d-present .a3d-label {
+  font-size: 15px;
+}
+
+.a3d-present .a3d-panel,
+.a3d-present .a3d-lab {
+  width: min(440px, calc(100vw - 56px));
+}
+
+/* 投屏时把说话最多的资料词条正文也放大 */
+.a3d-present .a3d-panel-desc,
+.a3d-present .a3d-panel-note,
+.a3d-present .a3d-part small,
+.a3d-present .a3d-quiz-option,
+.a3d-present .a3d-quiz-explanation {
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+
+/* 自助：把"操作型"的入口收起来，留标题 + 画面 + 署名 */
+.a3d-kiosk .app3d-nav {
+  display: none;
+}
+
+.a3d-kiosk .app3d-bridges {
+  display: none;
+}
+
+.a3d-kiosk .a3d-panel-close,
+.a3d-kiosk .app3d-credit a {
+  pointer-events: auto;
+}
+
+/* 自助在观众操作期间给一个明确的"已接管"提示条 */
+.a3d-kiosk-paused::after {
+  content: "已接管 · 停止操作 45 秒后自动继续巡览";
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 207, 106, 0.5);
+  background: rgba(9, 32, 41, 0.9);
+  color: #ffe1a6;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}

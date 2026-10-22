@@ -1,0 +1,10 @@
+[out:csv(::id,amenity,tourism,historic,name;false;"	")][timeout:90];
+(
+  node["amenity"](24.30,109.36,24.38,109.50);
+  node["tourism"](24.30,109.36,24.38,109.50);
+  node["historic"](24.30,109.36,24.38,109.50);
+  way["amenity"](24.30,109.36,24.38,109.50);
+  way["tourism"](24.30,109.36,24.38,109.50);
+  way["historic"](24.30,109.36,24.38,109.50);
+);
+out;
