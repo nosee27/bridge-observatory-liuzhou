@@ -1,33 +1,73 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
+using System.Windows.Forms;
 
 namespace QiaojianLauncher
 {
     /// <summary>
-    /// 桥见柳州 · 免安装启动器。
+    /// 桥见柳州 · 启动器。源码编译两次，得到两个互不干扰的程序：
     ///
-    /// 做的事情：
-    ///   1. 用 TcpListener 起一个只服务本机的小静态服务器（不依赖 Node / Python / 任何运行时）；
-    ///   2. 用系统自带的 Edge（或 Chrome）以 --app 模式打开窗口——
-    ///      没有地址栏、没有标签页，看起来就是一个独立应用；
-    ///   3. 浏览器窗口关闭后，服务器随之退出，不在后台驻留。
+    ///   桥见柳州.exe（本地版，未定义 LAN_EDITION）
+    ///     只绑 127.0.0.1，只在本机打开桌面窗口；不开放局域网、不改防火墙。
     ///
-    /// 之所以不用 HttpListener：它对 127.0.0.1 的前缀需要 URL ACL 授权（要管理员），
-    /// 而 TcpListener 直接监听回环端口，普通用户权限即可。
+    ///   桥见柳州-手机访问.exe（局域网版，/define:LAN_EDITION）
+    ///     绑 0.0.0.0，只为同 Wi-Fi 的手机/平板服务：自动确保防火墙放行，
+    ///     弹出可复制的地址窗口，**不打开本地桌面窗口**。
     ///
-    /// 调试参数：
-    ///   --no-launch   只起服务、不打开浏览器（自动化验收用）
-    ///   --port=4173   指定起始端口
-    ///   --lan         绑定所有网卡，并把手机可访问的局域网地址弹窗显示出来
+    /// 两个版本共用同一套静态服务代码，行为差异全部在编译期决定，
+    /// 避免"同一个程序靠参数切换"导致用户点错入口。
+    ///
+    /// 参数（两版通用）：
+    ///   --port=4173         指定起始端口（默认从 4173 起找空位）
+    ///   --no-launch         只起服务、不开任何窗口（自动化验收用）
+    ///   --no-firewall       跳过防火墙处理（局域网版调试用）
+    ///   --add-firewall-only 只加防火墙规则然后退出（内部用于提权重启）
     /// </summary>
     internal static class Program
     {
+#if LAN_EDITION
+        /// <summary>局域网版：对外服务，不打开本地窗口。</summary>
+        private const bool LanEdition = true;
+        private const string RuleNameExe = "Bridge Observatory (lan)";
+#else
+        /// <summary>本地版：只服务本机，不开放局域网。</summary>
+        private const bool LanEdition = false;
+        private const string RuleNameExe = "Bridge Observatory (local)";
+#endif
+        private const string RuleNamePort = "Bridge Observatory (port)";
+
+#if LAN_EDITION
+        private const string EditionName = "桥见柳州-手机访问";
+        private static Mutex _instanceMutex;
+#else
+        private const string EditionName = "桥见柳州";
+        private static Mutex _instanceMutex;
+#endif
+
+        /// <summary>同一时间只允许一个实例（--no-launch 的自动化测试除外）。</summary>
+        private static bool AcquireSingleInstance()
+        {
+            try
+            {
+                bool createdNew;
+                _instanceMutex = new Mutex(true, "Local\\QiaojianLiuzhou-" + EditionName, out createdNew);
+                return createdNew;
+            }
+            catch
+            {
+                // 互斥量创建失败不该阻止程序启动
+                return true;
+            }
+        }
+
         private static string _root;
         private static readonly Dictionary<string, string> MimeMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -55,12 +95,23 @@ namespace QiaojianLauncher
             { ".webmanifest", "application/manifest+json" }
         };
 
+        [STAThread]
         private static int Main(string[] args)
         {
             _root = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
+
             var noLaunch = Array.IndexOf(args, "--no-launch") >= 0;
-            // --lan：绑定所有网卡，让同一 Wi-Fi 下的手机/平板也能打开
-            var wantLan = Array.IndexOf(args, "--lan") >= 0;
+            var skipFirewall = Array.IndexOf(args, "--no-firewall") >= 0;
+            var addFirewallOnly = Array.IndexOf(args, "--add-firewall-only") >= 0;
+
+            if (addFirewallOnly)
+            {
+                return AddFirewallRules() ? 0 : 1;
+            }
+
+            // 版本决定绑定范围：本地版只回环，局域网版绑全部网卡
+            var localOnly = !LanEdition;
+
             var startPort = 4173;
             foreach (var arg in args)
             {
@@ -71,13 +122,33 @@ namespace QiaojianLauncher
                 }
             }
 
+            /*
+             * 启动阶段绝不提权。
+             *
+             * 原来这里会 Process.Start(自己, Verb="runas") 去补防火墙规则，
+             * 于是双击程序时先弹一次 UAC；若系统里已有一个以管理员身份运行的实例，
+             * Windows 会拒绝再启动一个提升的副本，并在界面上给出
+             * “现有实例正在以提升的权限运行”这类提示——用户看到的就是这句。
+             *
+             * 现在改成：启动时只用 netsh **读**规则（不需要管理员），
+             * 需要放行时由地址窗口里的按钮按需触发一次提权。
+             */
+            var firewallOk = localOnly || skipFirewall || FirewallAlreadyAllowed();
+
+            // 单实例：避免同时跑两个服务导致端口漂移、规则指向混乱
+            if (!noLaunch && !AcquireSingleInstance())
+            {
+                Fail("“" + EditionName + "”已经在运行了。\n请查看它已经打开的窗口；\n如果要重启，先关闭那个窗口。");
+                return 5;
+            }
+
             TcpListener listener = null;
             var port = startPort;
             for (var attempt = 0; attempt < 40; attempt++)
             {
                 try
                 {
-                    var candidate = new TcpListener(wantLan ? IPAddress.Any : IPAddress.Loopback, port);
+                    var candidate = new TcpListener(localOnly ? IPAddress.Loopback : IPAddress.Any, port);
                     candidate.Start(64);
                     listener = candidate;
                     break;
@@ -90,46 +161,66 @@ namespace QiaojianLauncher
 
             if (listener == null)
             {
-                Fail("没有可用端口（4173–4212 都被占用）。");
+                Fail("没有可用端口（4173–4212 都被占用）。请关闭占用端口的程序后重试。");
                 return 2;
             }
 
-            var url = "http://127.0.0.1:" + port + "/";
-            ThreadPool.QueueUserWorkItem(_ => AcceptLoop(listener));
+            var localUrl = "http://127.0.0.1:" + port + "/";
+            var lanUrls = localOnly ? new List<string>() : LanUrls(port);
 
-            var lanUrls = wantLan ? LanUrls(port) : new List<string>();
+            ThreadPool.QueueUserWorkItem(_ => AcceptLoop(listener));
 
             if (noLaunch)
             {
-                Console.WriteLine(url);
+                Console.WriteLine(localUrl);
                 foreach (var item in lanUrls) Console.WriteLine(item);
                 Console.Out.Flush();
-                // 调试模式：Ctrl+C 或父进程结束时退出
                 Thread.Sleep(Timeout.Infinite);
                 return 0;
             }
 
-            if (wantLan)
+#if LAN_EDITION
+            // 局域网版：不打开本地桌面窗口，地址窗口就是主界面——关掉它即停止服务
+            if (noLaunch)
             {
-                // 手机要输入的地址必须看得见：单独开一个信息框，不阻塞主线程
-                var message = lanUrls.Count > 0
-                    ? "手机 / 平板打开下面任一地址（需与电脑在同一个 Wi-Fi）：\n\n" + string.Join("\n", lanUrls)
-                    : "没有找到可用的局域网地址。\n请确认电脑已连接 Wi-Fi 或网线，然后用 --lan 重新启动。";
-                var boxThread = new Thread(() => Info(message, "桥见柳州 · 手机访问"));
-                boxThread.IsBackground = true;
-                boxThread.Start();
+                Console.WriteLine(localUrl);
+                foreach (var item in lanUrls) Console.WriteLine(item);
+                Console.Out.Flush();
+                Thread.Sleep(Timeout.Infinite);
+                return 0;
+            }
+
+            Application.Run(BuildAccessForm(lanUrls, firewallOk, IsAdmin()));
+            listener.Stop();
+            return 0;
+#else
+            // 本地版：只在本机浏览器里打开，不弹地址窗、不碰防火墙
+            if (noLaunch)
+            {
+                Console.WriteLine(localUrl);
+                Console.Out.Flush();
+                Thread.Sleep(Timeout.Infinite);
+                return 0;
             }
 
             var browser = FindBrowser();
             if (browser == null)
             {
-                Fail("没有找到 Microsoft Edge 或 Google Chrome。\n请安装其一后重试，或用浏览器打开：\n" + url);
+                Fail("没有找到 Microsoft Edge 或 Google Chrome。\n请安装其一后重试，或手动打开：\n" + localUrl);
                 listener.Stop();
                 return 3;
             }
 
-            var profile = Path.Combine(Path.GetTempPath(), "qiaojian-liuzhou-app");
-            var arguments = "\"--app=" + url + "\" --window-size=1440,900 --window-position=40,40 --user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check";
+            /*
+             * 每次启动用独立的临时配置目录（带进程号）。
+             *
+             * 原来固定用 %TEMP%\qiaojian-liuzhou-app：只要上一次的 Edge 还活着
+             * （比如服务已经停了、窗口还开着），下一次启动就会撞上同一个 profile 锁，
+             * Edge 便弹出"现有实例正在以提升的权限运行，是否以普通权限重启现有实例"。
+             * 独立目录从根上避免这种互相锁。
+             */
+            var profile = Path.Combine(Path.GetTempPath(), "qiaojian-liuzhou-app-" + Process.GetCurrentProcess().Id);
+            var arguments = "\"--app=" + localUrl + "\" --window-size=1440,900 --window-position=40,40 --user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check";
 
             var process = Process.Start(new ProcessStartInfo
             {
@@ -141,18 +232,380 @@ namespace QiaojianLauncher
 
             if (process == null)
             {
-                Fail("无法启动浏览器窗口。\n请手动打开：" + url);
+                Fail("无法启动浏览器窗口。\n请手动打开：" + localUrl);
                 listener.Stop();
                 return 4;
             }
 
-            // 浏览器窗口关闭 → 服务器退出，不在后台驻留
-            process.WaitForExit();
+            // 浏览器若在 3 秒内就退出，多半是被拦或配置锁冲突：退回系统默认浏览器，
+            // 至少让画面能打开（此时服务继续跑，用户关掉控制台/再双击才会停）。
+            var exitedFast = process.WaitForExit(3000);
+            if (exitedFast)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(localUrl) { UseShellExecute = true });
+                }
+                catch
+                {
+                    // 打不开就保持服务运行，用户可手动访问
+                }
+                WaitForAnyInput();
+            }
+            else
+            {
+                process.WaitForExit();
+            }
+
+            TryDeleteProfile(profile);
             listener.Stop();
             return 0;
+#endif
         }
 
-        /// <summary>枚举可用局域网地址（过滤回环、169.254、198.18/19 假地址）。</summary>
+        /* ---------------- 防火墙 ---------------- */
+
+        private static bool IsAdmin()
+        {
+            try
+            {
+                return new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>规则是否已存在：看 netsh show rule 的退出码（0=有，1=没有），不解析本地化文案。</summary>
+        private static bool RuleExists()
+        {
+            return Netsh("advfirewall firewall show rule name=\"" + RuleNameExe + "\"").Ok
+                && Netsh("advfirewall firewall show rule name=\"" + RuleNamePort + "\"").Ok;
+        }
+
+        /// <summary>
+        /// 标记文件：记录"哪一份 exe 路径已经放行过"。
+        /// 规则名是按版本区分的，但 exe 可能被移动/改名——那时旧规则指向旧路径，手机仍连不上。
+        /// 用标记 + 规则存在两个条件一起判断，既不会反复弹 UAC，也能在 exe 移动后重新放行。
+        /// </summary>
+        private static string MarkerPath()
+        {
+            var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QiaojianLiuzhou");
+            return Path.Combine(folder, "firewall-allowed.txt");
+        }
+
+        private static string ReadMarker()
+        {
+            try
+            {
+                var path = MarkerPath();
+                return File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static void WriteMarker()
+        {
+            try
+            {
+                var path = MarkerPath();
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllText(path, Application.ExecutablePath);
+            }
+            catch
+            {
+                // 写不了标记不影响使用，只是下次可能再问一次
+            }
+        }
+
+        /// <summary>只读判断：当前这份 exe 是否已经被防火墙放行（netsh show 不需要管理员）。</summary>
+        private static bool FirewallAlreadyAllowed()
+        {
+            if (!RuleExists()) return false;
+            return string.Equals(ReadMarker(), Application.ExecutablePath, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// 按需提权放行（由地址窗口的按钮触发，启动时不调用）。
+        /// 成功返回 true；用户取消 UAC 或系统拒绝时返回 false。
+        /// </summary>
+        private static bool RequestFirewallAccess()
+        {
+            if (IsAdmin()) return AddFirewallRules();
+
+            try
+            {
+                var elevate = Process.Start(new ProcessStartInfo
+                {
+                    FileName = Application.ExecutablePath,
+                    Arguments = "--add-firewall-only",
+                    Verb = "runas",
+                    UseShellExecute = true
+                });
+                if (elevate == null) return false;
+                elevate.WaitForExit();
+                return FirewallAlreadyAllowed();
+            }
+            catch
+            {
+                // 用户点了「否」，或系统禁止提权
+                return false;
+            }
+        }
+
+        private static bool AddFirewallRules()
+        {
+            var exePath = Application.ExecutablePath;
+            // 顺手清掉旧版本（未拆版）留下的通用规则名，避免出现指向旧路径的僵尸规则
+            Netsh("advfirewall firewall delete rule name=\"Bridge Observatory (exe)\"");
+
+            Netsh("advfirewall firewall delete rule name=\"" + RuleNameExe + "\"");
+            Netsh("advfirewall firewall delete rule name=\"" + RuleNamePort + "\"");
+            var okExe = Netsh("advfirewall firewall add rule name=\"" + RuleNameExe + "\" dir=in action=allow program=\"" + exePath + "\" enable=yes profile=any").Ok;
+            var okPort = Netsh("advfirewall firewall add rule name=\"" + RuleNamePort + "\" dir=in action=allow protocol=TCP localport=4173-4212 profile=any").Ok;
+
+            // node.js 也顺手放行（用 node server.js --lan 时手机同样能连）
+            var node = FindNode();
+            if (!string.IsNullOrEmpty(node))
+            {
+                Netsh("advfirewall firewall delete rule name=\"Bridge Observatory (node)\"");
+                Netsh("advfirewall firewall add rule name=\"Bridge Observatory (node)\" dir=in action=allow program=\"" + node + "\" enable=yes profile=any");
+            }
+
+            if (okExe && okPort) WriteMarker();
+            return okExe && okPort;
+        }
+
+        private static string FindNode()
+        {
+            var path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+            foreach (var folder in path.Split(';'))
+            {
+                if (string.IsNullOrWhiteSpace(folder)) continue;
+                try
+                {
+                    var candidate = Path.Combine(folder.Trim(), "node.exe");
+                    if (File.Exists(candidate)) return candidate;
+                }
+                catch
+                {
+                    // 忽略非法路径
+                }
+            }
+            return null;
+        }
+
+        private struct NetshResult
+        {
+            public bool Ok;
+            public string Output;
+        }
+
+        private static NetshResult Netsh(string arguments)
+        {
+            var result = new NetshResult { Ok = false, Output = string.Empty };
+            try
+            {
+                var info = new ProcessStartInfo("netsh", arguments)
+                {
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                using (var process = Process.Start(info))
+                {
+                    if (process == null) return result;
+                    var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+                    if (!process.WaitForExit(10000))
+                    {
+                        try
+                        {
+                            process.Kill();
+                        }
+                        catch
+                        {
+                            // 进程可能已经退出
+                        }
+                        return result;
+                    }
+                    result.Ok = process.ExitCode == 0;
+                    result.Output = output ?? string.Empty;
+                    return result;
+                }
+            }
+            catch
+            {
+                return result;
+            }
+        }
+
+        private static void TryDeleteProfile(string profile)
+        {
+            try
+            {
+                if (Directory.Exists(profile)) Directory.Delete(profile, true);
+            }
+            catch
+            {
+                // Edge 可能还有后台进程占着，删不掉就算了（下次启动用的是新目录）
+            }
+        }
+
+        /// <summary>浏览器被拦时，让服务继续跑一会儿，而不是立刻退出。</summary>
+        private static void WaitForAnyInput()
+        {
+            try
+            {
+                var form = new Form
+                {
+                    Text = "桥见柳州 · 服务运行中",
+                    ClientSize = new Size(460, 150),
+                    StartPosition = FormStartPosition.CenterScreen,
+                    TopMost = true,
+                    FormBorderStyle = FormBorderStyle.FixedDialog,
+                    MaximizeBox = false,
+                    MinimizeBox = false
+                };
+                var label = new Label
+                {
+                    Text = "浏览器窗口没能打开（可能被系统拦截或与已有实例冲突）。\n服务仍在运行，可手动访问地址栏里的链接；\n关闭这个窗口即停止服务。",
+                    Dock = DockStyle.Fill,
+                    Padding = new Padding(16),
+                    TextAlign = ContentAlignment.MiddleLeft
+                };
+                var stop = new Button { Text = "停止服务", Dock = DockStyle.Bottom, Height = 40 };
+                stop.Click += (sender, eventArgs) => form.Close();
+                form.Controls.Add(label);
+                form.Controls.Add(stop);
+                Application.Run(form);
+            }
+            catch
+            {
+                // 无桌面环境时直接返回
+            }
+        }
+
+        /* ---------------- 手机地址窗口 ---------------- */
+
+        private static Form BuildAccessForm(List<string> lanUrls, bool firewallOk, bool runningAsAdmin)
+        {
+            var form = new Form
+            {
+                Text = "桥见柳州 · 手机访问",
+                ClientSize = new Size(560, 300),
+                StartPosition = FormStartPosition.CenterScreen,
+                TopMost = true,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                Font = new Font("Microsoft YaHei UI", 9F)
+            };
+
+            var title = new Label
+            {
+                Text = "手机浏览器打开下面任一地址（需与电脑连同一个 Wi-Fi）",
+                Dock = DockStyle.Top,
+                Height = 42,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(14, 0, 0, 0),
+                Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold)
+            };
+
+            var addressBox = new TextBox
+            {
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical,
+                Dock = DockStyle.Fill,
+                Font = new Font("Consolas", 13F),
+                BackColor = Color.White,
+                Text = lanUrls.Count > 0
+                    ? string.Join(Environment.NewLine, lanUrls)
+                    : "未找到局域网地址：请先确认电脑已连接 Wi-Fi 或网线。"
+            };
+
+            var hint = new Label
+            {
+                Text = firewallOk
+                    ? (runningAsAdmin
+                        ? "防火墙已放行。注意：当前以管理员身份运行，浏览器可能提示权限冲突；建议普通双击。"
+                        : "防火墙已放行。关闭这个窗口即停止服务。")
+                    : "防火墙尚未放行：手机可能连不上。点右侧按钮按需授权（只需一次）。",
+                Dock = DockStyle.Bottom,
+                Height = 46,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(14, 0, 0, 0),
+                ForeColor = firewallOk ? Color.DimGray : Color.Firebrick
+            };
+
+            var buttons = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                FlowDirection = FlowDirection.RightToLeft,
+                Height = 50,
+                Padding = new Padding(10, 8, 10, 8)
+            };
+
+            var close = new Button { Text = "停止服务", AutoSize = true, MinimumSize = new Size(96, 32) };
+            close.Click += (sender, eventArgs) => form.Close();
+
+            var copy = new Button { Text = "复制地址", AutoSize = true, MinimumSize = new Size(96, 32) };
+            copy.Click += (sender, eventArgs) =>
+            {
+                if (lanUrls.Count == 0) return;
+                try
+                {
+                    Clipboard.SetText(lanUrls[0]);
+                    copy.Text = "已复制";
+                }
+                catch
+                {
+                    // 剪贴板偶尔会被别的程序占用
+                }
+            };
+
+            buttons.Controls.Add(close);
+            buttons.Controls.Add(copy);
+
+            if (!firewallOk)
+            {
+                var allow = new Button { Text = "放行防火墙", AutoSize = true, MinimumSize = new Size(110, 32) };
+                allow.Click += (sender, eventArgs) =>
+                {
+                    allow.Enabled = false;
+                    allow.Text = "等待授权…";
+                    var granted = RequestFirewallAccess();
+                    allow.Enabled = true;
+                    if (granted)
+                    {
+                        allow.Visible = false;
+                        hint.Text = "防火墙已放行。关闭这个窗口即停止服务。";
+                        hint.ForeColor = Color.DimGray;
+                    }
+                    else
+                    {
+                        allow.Text = "放行防火墙";
+                        hint.Text = "仍未放行（授权被取消或系统拒绝）。手机可能连不上；也可改用静态托管。";
+                        hint.ForeColor = Color.Firebrick;
+                    }
+                };
+                buttons.Controls.Add(allow);
+            }
+
+            form.Controls.Add(addressBox);
+            form.Controls.Add(title);
+            form.Controls.Add(buttons);
+            form.Controls.Add(hint);
+            return form;
+        }
+
+        /* ---------------- 站点服务 ---------------- */
+
         private static List<string> LanUrls(int port)
         {
             var urls = new List<string>();
@@ -163,6 +616,7 @@ namespace QiaojianLauncher
                     if (address.AddressFamily != AddressFamily.InterNetwork) continue;
                     var text = address.ToString();
                     if (text.StartsWith("127.") || text.StartsWith("169.254.")) continue;
+                    // 198.18/19 是 Clash 之类 TUN 的假地址，手机连不上
                     if (text.StartsWith("198.18.") || text.StartsWith("198.19.")) continue;
                     urls.Add("http://" + text + ":" + port + "/");
                 }
@@ -174,23 +628,11 @@ namespace QiaojianLauncher
             return urls;
         }
 
-        private static void Info(string message, string caption)
-        {
-            try
-            {
-                System.Windows.Forms.MessageBox.Show(message, caption, System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
-            }
-            catch
-            {
-                Console.WriteLine(message);
-            }
-        }
-
         private static void Fail(string message)
         {
             try
             {
-                System.Windows.Forms.MessageBox.Show(message, "桥见柳州", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                MessageBox.Show(message, "桥见柳州", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             catch
             {
@@ -202,7 +644,7 @@ namespace QiaojianLauncher
         {
             var candidates = new List<string>
             {
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles, System.Environment.SpecialFolderOption.DoNotVerify), @"Microsoft\Edge\Application\msedge.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Microsoft\Edge\Application\msedge.exe"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Microsoft\Edge\Application\msedge.exe"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Google\Chrome\Application\chrome.exe"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Google\Chrome\Application\chrome.exe"),
@@ -268,7 +710,6 @@ namespace QiaojianLauncher
                     var relative = target.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
                     var full = Path.GetFullPath(Path.Combine(_root, relative));
 
-                    // 目录穿越防护：目标必须仍在站点根目录内
                     if (!full.StartsWith(_root, StringComparison.OrdinalIgnoreCase))
                     {
                         Write(stream, 403, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Forbidden"));
@@ -301,7 +742,6 @@ namespace QiaojianLauncher
             header.Append("HTTP/1.1 ").Append(status).Append(' ').Append(reason).Append("\r\n");
             header.Append("Content-Type: ").Append(contentType).Append("\r\n");
             header.Append("Content-Length: ").Append(body.Length).Append("\r\n");
-            // 交付物随时可能被替换：一律不缓存，避免展厅里看到旧画面
             header.Append("Cache-Control: no-store, must-revalidate\r\n");
             header.Append("Connection: close\r\n");
             header.Append("\r\n");

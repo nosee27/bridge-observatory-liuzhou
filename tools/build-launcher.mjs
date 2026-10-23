@@ -1,11 +1,12 @@
 /**
- * 编译免安装启动器：launcher/Program.cs → 桥见柳州.exe
+ * 编译两个启动程序（共享 launcher/Program.cs，编译期用 LAN_EDITION 区分）：
  *
- * 用的是 Windows 自带的 .NET Framework 编译器（csc.exe），
- * 不下载任何东西、不依赖 Node 或管理员权限。
+ *   桥见柳州.exe            本地版：只绑 127.0.0.1，只在本机开桌面窗口；不开放局域网、不碰防火墙
+ *   桥见柳州-手机访问.exe    局域网版：绑 0.0.0.0，自动放行防火墙，只弹地址窗口（不开桌面窗口）
  *
- * 用法：
- *   node tools/build-launcher.mjs
+ * 用 Windows 自带的 .NET Framework 编译器（csc.exe），不下载任何东西。
+ *
+ * 用法：node tools/build-launcher.mjs
  */
 
 import fs from "node:fs";
@@ -14,7 +15,11 @@ import { execFileSync } from "node:child_process";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SOURCE = path.join(ROOT, "launcher", "Program.cs");
-const OUTPUT = path.join(ROOT, "桥见柳州.exe");
+
+const TARGETS = [
+  { output: "桥见柳州.exe", define: null, label: "本地版" },
+  { output: "桥见柳州-手机访问.exe", define: "LAN_EDITION", label: "局域网版（手机）" }
+];
 
 const candidates = [
   "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe",
@@ -33,25 +38,43 @@ if (!fs.existsSync(SOURCE)) {
   process.exit(1);
 }
 
-const args = [
-  "/nologo",
-  "/target:winexe",
-  "/optimize+",
-  "/platform:anycpu",
-  "/reference:System.Windows.Forms.dll",
-  `/out:${OUTPUT}`,
-  SOURCE
-];
+for (const target of TARGETS) {
+  const output = path.join(ROOT, target.output);
+  // 正在运行的 exe 会被锁住，先尝试清掉
+  if (fs.existsSync(output)) {
+    try {
+      fs.unlinkSync(output);
+    } catch {
+      console.error(`无法覆盖 ${target.output}：它可能正在运行。请先关闭它再编译。`);
+      process.exit(1);
+    }
+  }
 
-try {
-  const output = execFileSync(csc, args, { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
-  if (output.trim()) console.log(output.trim());
-} catch (error) {
-  console.error("编译失败：");
-  console.error(String(error.stdout || "") + String(error.stderr || ""));
-  process.exit(1);
+  const args = [
+    "/nologo",
+    "/target:winexe",
+    "/optimize+",
+    "/platform:anycpu",
+    "/reference:System.Windows.Forms.dll",
+    "/reference:System.Drawing.dll",
+    ...(target.define ? [`/define:${target.define}`] : []),
+    `/out:${output}`,
+    SOURCE
+  ];
+
+  try {
+    const stdout = execFileSync(csc, args, { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
+    if (stdout.trim()) console.log(stdout.trim());
+  } catch (error) {
+    console.error(`编译 ${target.output} 失败：`);
+    console.error(String(error.stdout || "") + String(error.stderr || ""));
+    process.exit(1);
+  }
+
+  const size = fs.statSync(output).size;
+  console.log(`已生成 ${target.output}（${target.label}）：${(size / 1024).toFixed(0)} KB`);
 }
 
-const stat = fs.statSync(OUTPUT);
-console.log(`已生成 ${path.basename(OUTPUT)}：${(stat.size / 1024).toFixed(0)} KB`);
-console.log("双击即用：内置静态服务 + Edge/Chrome 独立窗口（无地址栏、无标签页）");
+console.log("");
+console.log("本地版：双击只在本机打开，不开放局域网、不改防火墙。");
+console.log("局域网版：双击后弹窗显示手机地址，关闭该窗口即停止服务。");

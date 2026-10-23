@@ -55,6 +55,14 @@ const els = {
 
 const navItems = Array.from(document.querySelectorAll("[data-nav]"));
 
+/**
+ * WebGL 预检：只用来在 HUD 上显示状态，**不再决定首屏**。
+ *
+ * 分离的 canvas 上 getContext('webgl') 在个别环境会返回 null（假阴性），
+ * 而真正挂到页面上的 canvas 能正常建上下文。早先正是拿这个预检当开关，
+ * 于是在这类环境里"打开就是二维版"。现在一律先尝试建场景，
+ * 只有真正抛异常才回退二维，并把原因显示出来。
+ */
 function detectWebGL() {
   try {
     const probe = document.createElement("canvas");
@@ -71,7 +79,9 @@ function detectWebGL() {
 const isFileProtocol = window.location.protocol === "file:";
 const webglAvailable = detectWebGL();
 
-let browseOnly = isFileProtocol || !webglAvailable;
+// 只有 file:// 才在入口就拦下（ES 模块在 file:// 下根本加载不了）。
+// WebGL 预检失败也照样进三维，让真实的初始化去判断。
+let browseOnly = isFileProtocol;
 let scene = null;
 let sceneInitPromise = null;
 let renderedView = null;
@@ -360,7 +370,8 @@ async function ensureSceneReady(state) {
     browseOnly = true;
     showBootNotice(
       "3D 场景加载失败",
-      `无法初始化 WebGL 场景（${String((error && error.message) || error)}）。已切换到列表视图，全部内容仍可访问。`
+      `无法初始化 WebGL 场景（${String((error && error.message) || error)}）。已切换到二维版本，全部内容仍可访问。` +
+        " 如果浏览器禁用了硬件加速，可在 Edge 设置里打开「使用图形加速」后重试。"
     );
     window.location.hash = "#browse";
   }
@@ -598,6 +609,15 @@ function renderApp3d(state) {
   applyExperiment(state);
 }
 
+/** file:// 打开时说明为什么进不了三维。 */
+function explainFileProtocol() {
+  if (!isFileProtocol) return;
+  showBootNotice(
+    "需要通过本地服务打开",
+    "直接双击 index.html 时浏览器会以 file:// 加载，ES 模块与 WebGL 场景都不可用，因此先显示二维版本。请改双击 桥见柳州.exe（或 桥见柳州-手机访问.exe），它会启动本地服务。"
+  );
+}
+
 function onChange(state, meta) {
   // 列表视图内的页内锚点、旧格式 hash 不应把我们切进 3D。
   if (!meta.initial && renderedView === "browse" && !isSceneRoute(window.location.hash)) {
@@ -682,6 +702,8 @@ function boot() {
   guardGuideIn3d();
 
   // 交付形态：只加 class，不改路由语义
+  explainFileProtocol();
+
   if (showFlags.present) document.body.classList.add("a3d-present");
   if (showFlags.kiosk) {
     document.body.classList.add("a3d-kiosk");

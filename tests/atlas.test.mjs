@@ -1928,48 +1928,134 @@ for (const bridge of GEO.bridges) {
   );
 }
 
-/* ---------------- 启动脚本的可执行性 ---------------- */
+/* ---------------- 首屏必须是三维 ---------------- */
 
 /**
- * 踩过的坑：把 .bat 存成 UTF-8 并在里面写中文，cmd.exe 会按 OEM 代码页（GBK）读，
- * 于是 if exist "桥见柳州.exe" 这条判断被读成乱码、静默跳过，脚本看起来"双击没反应"。
- * 所以：启动脚本一律纯 ASCII，中文文件名靠通配符 * .exe 解析。
+ * 用户反馈"打开就到二维页面"。
  *
- * 这里锁三件事：脚本存在、是纯 ASCII、且用通配符找启动器而不是拼中文字面量。
+ * 原因：入口拿"分离 canvas 的 WebGL 预检"当开关——
+ *   let browseOnly = isFileProtocol || !detectWebGL();
+ * 分离的 canvas 上 getContext 在个别环境会假阴性（真挂到页面上的 canvas 却没问题），
+ * 于是这类环境一进页面就被判成"不支持三维"，直接落到二维版。
+ *
+ * 现在只有 file:// 才在入口拦下；WebGL 预检只用来显示状态，
+ * 真正的判断交给场景初始化——失败才回退，并提示原因。
  */
 {
-  const readFile = async (name) =>
-    (await import("node:fs/promises")).readFile(new URL(`../${name}`, import.meta.url), "utf8");
+  const main = await (await import("node:fs/promises")).readFile(
+    new URL("../app3d/main.mjs", import.meta.url),
+    "utf8"
+  );
 
-  const scripts = ["start-mobile.bat", "start-lan.bat", "start.bat"];
-  for (const name of scripts) {
-    const source = await readFile(name).catch(() => null);
-    checkTrue(`${name} 存在`, Boolean(source));
-    if (!source) continue;
+  checkTrue("首屏只被 file:// 拦住", /let browseOnly = isFileProtocol;/.test(main));
+  checkTrue(
+    "不再用 WebGL 预检决定首屏",
+    !/browseOnly = isFileProtocol \|\| !webglAvailable/.test(main),
+    "预检假阴性会让这类环境永远进不了三维"
+  );
+  checkTrue("预检仍在（用于状态显示）", /const webglAvailable = detectWebGL\(\);/.test(main));
+  checkTrue(
+    "场景初始化真失败才回退",
+    /场景初始化失败/.test(main) && /browseOnly = true;/.test(main) && /showBootNotice\(/.test(main)
+  );
+  checkTrue("失败提示带硬件加速建议", /硬件加速/.test(main));
+  checkTrue("file:// 打开时解释原因", /explainFileProtocol/.test(main) && /file:\/\//.test(main));
+}
+
+/* ---------------- 四种入口：两个 exe + 两个 .bat ---------------- */
+
+/**
+ * 交付方案（用户定稿）：
+ *
+ *   推荐路径 = 用 Node 启动，避开未签名 exe 的 SmartScreen 提示
+ *     start-local.bat   -> node server.js        只绑 127.0.0.1
+ *     start-lan.bat     -> node server.js --lan  绑定 0.0.0.0 供手机访问
+ *
+ *   便利路径 = 两个免装 Node 的 exe（同一份 Program.cs 编译期分叉）
+ *     桥见柳州.exe            本地版
+ *     桥见柳州-手机访问.exe    局域网版
+ *
+ * 守住两件事：
+ *   1. .bat 必须纯 ASCII（cmd 按 OEM 代码页读，中文会被读成乱码导致脚本静默失效）；
+ *   2. .bat 参数方向不能反（local 不许带 --lan，lan 必须带 --lan）。
+ */
+{
+  const dir = new URL("..", import.meta.url);
+  const bats = fs
+    .readdirSync(dir)
+    .filter((name) => name.toLowerCase().endsWith(".bat"))
+    .sort();
+
+  checkTrue("恰好两个 .bat 入口", bats.length === 2, bats.join(","));
+  checkTrue("本机启动脚本存在", bats.includes("start-local.bat"));
+  checkTrue("局域网启动脚本存在", bats.includes("start-lan.bat"));
+
+  const fsPromises = await import("node:fs/promises");
+  const readBat = (name) => fsPromises.readFile(new URL(`../${name}`, import.meta.url), "utf8");
+
+  for (const name of bats) {
+    const source = await readBat(name);
     const nonAscii = [...source].filter((char) => char.charCodeAt(0) > 127);
     checkTrue(
       `${name} 是纯 ASCII（否则 cmd 会读成乱码）`,
       nonAscii.length === 0,
-      `发现 ${nonAscii.length} 个非 ASCII 字符：${nonAscii.slice(0, 8).join("")}`
+      `发现 ${nonAscii.length} 个非 ASCII 字符`
     );
+    checkTrue(`${name} 会检查 node 是否存在`, /where node/.test(source));
+    checkTrue(`${name} 缺少 node 时给出提示而不是闪退`, /pause/.test(source));
   }
 
-  const mobile = await readFile("start-mobile.bat");
-  checkTrue("start-mobile.bat 会带 --lan 启动", /--lan/.test(mobile));
-  checkTrue(
-    "start-mobile.bat 用通配符找启动器（不拼中文文件名）",
-    /for %%f in \("%~dp0\*\.exe"\)/.test(mobile),
-    mobile.split("\n").find((line) => line.includes("for %%f")) || ""
-  );
+  const localBat = await readBat("start-local.bat");
+  const lanBat = await readBat("start-lan.bat");
 
-  const firewall = await readFile("允许手机访问.bat");
-  checkTrue(
-    "允许手机访问.bat 对任意网络配置文件放行",
-    /profile=any/.test(firewall) && /dir=in action=allow/.test(firewall)
-  );
+  checkTrue("本机脚本调用 node server.js", /node server\.js\s*$/m.test(localBat));
+  checkTrue("本机脚本不开放局域网", !localBat.includes("--lan"), "local 脚本里出现了 --lan");
+  checkTrue("本机脚本会打开浏览器", /127\.0\.0\.1:4173/.test(localBat));
+  checkTrue("局域网脚本带上 --lan", /node server\.js --lan/.test(lanBat));
+  checkTrue("局域网脚本不自动开浏览器", !/start "" "http/.test(lanBat));
 
-  const doctor = await readFile("tools/lan-doctor.mjs");
-  checkTrue("提供局域网自查工具", /== 2\. 防火墙/.test(doctor) || doctor.includes("防火墙"));
+  /* exe 仍然保留，且与 .bat 是同一套行为 */
+  const launcher = await fsPromises.readFile(new URL("../launcher/Program.cs", import.meta.url), "utf8");
+  const buildScript = await fsPromises.readFile(new URL("../tools/build-launcher.mjs", import.meta.url), "utf8");
+
+  checkTrue("有 LAN_EDITION 编译期分支", /#if LAN_EDITION[\s\S]*?#else[\s\S]*?#endif/.test(launcher));
+  checkTrue("绑定范围由版本决定", /var localOnly = !LanEdition;/.test(launcher));
+  checkTrue("本地版会找浏览器开窗口", /var browser = FindBrowser\(\);/.test(launcher));
+  checkTrue(
+    "局域网版用地址窗口作为主界面",
+    /Application\.Run\(BuildAccessForm\(lanUrls, firewallOk, IsAdmin\(\)\)\)/.test(launcher)
+  );
+  checkTrue(
+    "局域网版分支里没有打开桌面浏览器窗口",
+    !/#if LAN_EDITION[\s\S]*?var browser = FindBrowser[\s\S]*?#else/.test(launcher)
+  );
+  checkTrue(
+    "启动阶段只读判断、不提权",
+    /var firewallOk = localOnly \|\| skipFirewall \|\| FirewallAlreadyAllowed\(\);/.test(launcher)
+  );
+  checkTrue("已移除启动期提权函数", !/EnsureFirewall/.test(launcher));
+  checkTrue("提权只发生在按需按钮里", /RequestFirewallAccess/.test(launcher) && /Verb = "runas"/.test(launcher));
+  checkTrue("地址窗口提供“放行防火墙”按钮", /放行防火墙/.test(launcher));
+  checkTrue("有单实例互斥", /AcquireSingleInstance/.test(launcher) && /new Mutex/.test(launcher));
+  checkTrue(
+    "规则名按版本区分",
+    /Bridge Observatory \(lan\)/.test(launcher) && /Bridge Observatory \(local\)/.test(launcher)
+  );
+  checkTrue("规则判断用退出码而不是本地化文案", /result\.Ok = process\.ExitCode == 0;/.test(launcher));
+  checkTrue(
+    "Edge 配置目录带进程号（每次独立）",
+    /"qiaojian-liuzhou-app-" \+ Process\.GetCurrentProcess\(\)\.Id/.test(launcher)
+  );
+  checkTrue("退出时清理临时配置目录", /TryDeleteProfile\(profile\)/.test(launcher));
+  checkTrue(
+    "浏览器被拦时退回默认浏览器",
+    /Process\.Start\(new ProcessStartInfo\(localUrl\) \{ UseShellExecute = true \}\)/.test(launcher)
+  );
+  checkTrue(
+    "构建脚本产出两个 exe",
+    buildScript.includes('"桥见柳州.exe"') && buildScript.includes('"桥见柳州-手机访问.exe"')
+  );
+  checkTrue("局域网版编译时带 LAN_EDITION", /LAN_EDITION/.test(buildScript));
 }
 
 /* ---------------- 移动端启动：局域网地址筛选 ---------------- */
@@ -2012,7 +2098,7 @@ for (const bridge of GEO.bridges) {
   const server = await (await import("node:fs/promises")).readFile(new URL("../server.js", import.meta.url), "utf8");
   checkTrue("server.js 默认绑定回环", /wantLan \? "0\.0\.0\.0" : "127\.0\.0\.1"/.test(server));
   checkTrue("server.js 支持 --lan", /--lan/.test(server) && /listLanAddresses\(\)/.test(server));
-  checkTrue("提供了 start-lan.bat", fs.existsSync(new URL("../start-lan.bat", import.meta.url)));
+  checkTrue("启动器源码在本仓库内", fs.existsSync(new URL("../launcher/Program.cs", import.meta.url)));
 }
 
 /* ---------------- 合并几何体必须有法线 ---------------- */
